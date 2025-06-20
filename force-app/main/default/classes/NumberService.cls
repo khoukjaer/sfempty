@@ -1,48 +1,47 @@
 public with sharing class NumberService {
 
     private final DatabaseService databaseService;
-
     private final NumberClient numberClient;
 
    
 
-    public NumberService() {
+                             public NumberService() {
 
-        this(SingletonFactory.getFactory());
+                                                          this(SingletonFactory.getFactory());
 
-    }
+                             }
 
  
 
-    private NumberService(SingletonFactory singletonFactory) {
+                             private NumberService(SingletonFactory singletonFactory) {
 
         this.databaseService = (DatabaseService) singletonFactory.getOrRegisterSingleton(
 
-            DatabaseService.class
+                                                                                       DatabaseService.class
 
-        );
+                                                          );
 
        
 
-        this.numberClient = (NumberClient) singletonFactory.getOrRegisterSingleton(
+                                                          this.numberClient = (NumberClient) singletonFactory.getOrRegisterSingleton(
 
-            NumberClient.class
+                                                                                       NumberClient.class
 
-        );
+                                                          );
 
-    }
+                             }
 
  
 
-    @TestVisible
+                             @TestVisible
 
-    private NumberService(DatabaseService databaseService, NumberClient numberClient) {
+                             private NumberService(DatabaseService databaseService, NumberClient numberClient) {
 
-        this.numberClient = numberClient;
+                                                          this.numberClient = numberClient;
 
         this.databaseService = databaseService;
 
-    }
+                             }
 
  
 
@@ -50,15 +49,15 @@ public with sharing class NumberService {
 
         Logger.logInfo(
 
-            String.format(
+                                                                                       String.format(
 
-                'reserveNumberByActivationLine( {0}, {1} )',
+                                                                                                                    'reserveNumberByActivationLine( {0}, {1} )',
 
-                new List<Object>{ activationLineId, msisdn }
+                                                                                                                    new List<Object>{ activationLineId, msisdn }
 
-            )
+                                                                                       )
 
-        );
+                                                          );
 
  
 
@@ -82,7 +81,7 @@ public with sharing class NumberService {
 
  
 
-            activationLine.Phone_Number_Reservation_Status__c = 'SUCCESS';
+                            activationLine.Phone_Number_Reservation_Status__c = 'SUCCESS';
 
             activationLine.Phone_Number_Reservation_Error__c = null;
 
@@ -102,15 +101,15 @@ public with sharing class NumberService {
 
         Logger.logInfo(
 
-            String.format(
+                                                                                       String.format(
 
-                'setReserveNumberErrorMessageByActivationLineId( {0}, {1} )',
+                                                                                                                    'setReserveNumberErrorMessageByActivationLineId( {0}, {1} )',
 
-                new List<Object>{ activationLineId, errorMessage }
+                                                                                                                    new List<Object>{ activationLineId, errorMessage }
 
-            )
+                                                                                       )
 
-        );
+                                                          );
 
  
 
@@ -182,13 +181,13 @@ public with sharing class NumberService {
 
     public class GetNumbersParameterbuilder {
 
-        public String numberGroup;
+        String numberGroup;
 
         String numberLocation;
 
         Integer amountOfNumbers;
 
-        public String numberStatus;
+        String numberStatus;
 
         String cvr;
 
@@ -310,7 +309,9 @@ public with sharing class NumberService {
 
     }
 
-public static NumberResDAO.NumberDetail getNumberDetailByMsisdn(String msisdn) {
+
+
+    public static NumberResDAO.NumberDetail getNumberDetailByMsisdn(String msisdn) {
 
         HttpRequest request = new HttpRequest();
 
