@@ -1,9 +1,10 @@
 public with sharing class ExampleFeature {
 
-    public static final String NEW_FEATURE_TOGGLE_NAME = 'NewExampleFeature';
+    // The constant NEW_FEATURE_TOGGLE_NAME is no longer needed here,
+    // as the toggle name is encapsulated within FeatureToggles class.
 
     public String getFeatureBehavior() {
-        if (FeatureToggleService.isFeatureEnabled(NEW_FEATURE_TOGGLE_NAME)) {
+        if (FeatureToggles.NewExampleFeature) { // Changed to use FeatureToggles
             return 'New Behavior Enabled';
         } else {
             return 'Old Behavior';
@@ -11,7 +12,7 @@ public with sharing class ExampleFeature {
     }
 
     public Integer performComplexCalculation(Integer input) {
-        if (FeatureToggleService.isFeatureEnabled('ComplexMathV2Enabled')) {
+        if (FeatureToggles.ComplexMathV2Enabled) { // Changed to use FeatureToggles
             // Imagine a new, complex calculation
             return input * input * 2; // New version
         } else {
