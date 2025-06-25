@@ -1,3 +1,13 @@
+/**
+ * The PhoneNumberSyncService is responsible for synchronizing Fokus phone numbers with Salesforce
+ *  -----------------------------------------------------------------------------
+ *  Developer            Date            Description
+ *  -----------------------------------------------------------------------------
+ *  Kenneth Houkjær         22/06/2025      Initial version 
+ * 
+ * @author Kenneth Houkjær
+ * @date 22/06/2025
+ */
 public virtual class PhoneNumberSyncService { // Made class virtual for extensibility in tests
 
     private NumberService numberServiceInstance;
@@ -25,54 +35,64 @@ public virtual class PhoneNumberSyncService { // Made class virtual for extensib
         }
     }
 
-    // Wrapper method for the static call to make it mockable in tests
+    /**
+     * Wrapper method for the static call to make it mockable in tests
+     */
     @TestVisible // Or protected if tests are in the same namespace and can extend
     protected virtual NumberResDAO.NumberDetails callGetNumberDetails(NumberService.GetNumbersParameterbuilder params) {
         return NumberService.getNumberDetails(params);
     }
 
-    // Method to get Account Phone Number Series records. Made virtual for potential test mocking.
+    /**
+     * Method to get Account Phone Number Series records. Made virtual for potential test mocking.
+     */
     @TestVisible
-    protected virtual List<Account_Phone_Number_Series__c> getAllAccountPhoneNumberSeries() {
-        return [
-            SELECT Id, Name, Number_Group__c, Number_Location__c, CVR__c, Number_Pattern_c, Product_type__c
-            FROM Account_Phone_Number_Series__c
-        ];
+    protected virtual List<Account_Phone_Number_Series__c> getAllAccountPhoneNumberSeries(Account acc) {
+       return AccountPhoneNumberSeriesSelector.getAllAccountPhoneNumberSeries(acc);
     }
 
-    // Method to get OpenPhoneNumberSeries metadata. Made virtual for potential test mocking.
+    /**
+     * Method to get OpenPhoneNumberSeries metadata. Made virtual for potential test mocking.
+     */
     @TestVisible
     protected virtual List<OpenPhoneNumberSeries__mdt> getOpenPhoneNumberSeriesMetadata() {
         // Assuming API names NumberGroup__c and NumberLocation__c based on typical naming.
         // User feedback: "OpenPhoneNumberSeries containing NumberGroup, NumberLocation"
         // Adjust if API names are different (e.g., MasterLabel or DeveloperName if those store the group/location)
-        return [SELECT NumberGroup__c, NumberLocation__c FROM OpenPhoneNumberSeries__mdt];
+        return MetadataSelector.getOpenPhoneNumberSeries();
     }
 
-    public void synchronizeAssignments() {
-        Map<String, Account_Phone_Number_Assignment__c> localAssignments = getLocalAssignments();
-        Map<String, RemoteAssignmentWrapper> remoteAssignments = getRemoteAssignments(); // Changed return type
+    /**
+     * Synchronizes assignments for a given account
+     */
+    public void synchronizeAssignmentsForAccount(Account acc) {
+        Map<String, Account_Phone_Number_Assignment__c> localAssignments = getLocalAssignments(acc);
+        Map<String, RemoteAssignmentWrapper> remoteAssignments = getRemoteAssignments(acc); // Changed return type
         compareAndPrepareDML(localAssignments, remoteAssignments); // Argument type changed
+        
+        Logger.emit();
+    }
+    
+     /**
+      * Synchronizes assignments for all accounts
+      */
+    public void synchronizeAllAssignments() {
+        Map<String, Account_Phone_Number_Assignment__c> localAssignments = getLocalAssignments(null);
+        Map<String, RemoteAssignmentWrapper> remoteAssignments = getRemoteAssignments(null); // Changed return type
+        compareAndPrepareDML(localAssignments, remoteAssignments); // Argument type changed
+        
+        Logger.emit();
     }
 
-    private Map<String, Account_Phone_Number_Assignment__c> getLocalAssignments() {
+    /**
+     * getLocalAssignments
+     */
+    private Map<String, Account_Phone_Number_Assignment__c> getLocalAssignments(Account acc) {
+        List<Account_Phone_Number_Assignment__c> listOfAccountPhoneNumberAssignments = AccountPhoneNumberAssignmentSelector.getAssignments(acc);
+        
         Map<String, Account_Phone_Number_Assignment__c> localAssignmentsMap = new Map<String, Account_Phone_Number_Assignment__c>();
 
-        // Querying Account_Phone_Number_Assignment__c with its new fields
-        // Using Phone_Number__c as the key.
-        // Including fields from the parent Account_Phone_Number_Series__r for context.
-        for (Account_Phone_Number_Assignment__c assignment : [
-            SELECT Id, Name, Phone_Number__c, CTN_Number_Status__c,
-                   Account_Phone_Number_Series__c, // Master-Detail Relationship ID
-                   Account_Phone_Number_Series__r.Name, // Name of the parent series
-                   Account_Phone_Number_Series__r.Number_Group__c,
-                   Account_Phone_Number_Series__r.Number_Location__c,
-                   Phone_Number_Reservation_Error__c,
-                   Phone_Number_Reservation_Status__c,
-                   Phone_Number_user__c,
-                   Account__c // Lookup to Account
-            FROM Account_Phone_Number_Assignment__c
-        ]) {
+        for (Account_Phone_Number_Assignment__c assignment : listOfAccountPhoneNumberAssignments) {
             if (String.isNotBlank(assignment.Phone_Number__c)) {
                 localAssignmentsMap.put(assignment.Phone_Number__c.toLowerCase(), assignment); // Key by lowercase phone number for case-insensitivity
             }
@@ -80,13 +100,16 @@ public virtual class PhoneNumberSyncService { // Made class virtual for extensib
         return localAssignmentsMap;
     }
 
-    private Map<String, RemoteAssignmentWrapper> getRemoteAssignments() {
+    /**
+     * getRemoteAssignments
+     */
+    private Map<String, RemoteAssignmentWrapper> getRemoteAssignments(Account acc) {
         Map<String, RemoteAssignmentWrapper> remoteAssignmentsMap = new Map<String, RemoteAssignmentWrapper>();
 
         // 1. Get all Account Phone Number Series
-        List<Account_Phone_Number_Series__c> allSeriesRecords = getAllAccountPhoneNumberSeries();
+        List<Account_Phone_Number_Series__c> allSeriesRecords = getAllAccountPhoneNumberSeries(acc);
         if (allSeriesRecords.isEmpty()) {
-            System.debug('No Account_Phone_Number_Series__c records found. No remote assignments to fetch.');
+            Logger.logInfo('No Account_Phone_Number_Series__c records found. No remote assignments to fetch.');
             return remoteAssignmentsMap;
         }
 
@@ -94,11 +117,11 @@ public virtual class PhoneNumberSyncService { // Made class virtual for extensib
         Set<String> openSeriesKeys = new Set<String>();
         for (OpenPhoneNumberSeries__mdt opsMeta : getOpenPhoneNumberSeriesMetadata()) {
             // Create a unique key for comparison, e.g., "P_EKC"
-            if (String.isNotBlank(opsMeta.NumberGroup__c) && String.isNotBlank(opsMeta.NumberLocation__c)) {
-                openSeriesKeys.add(opsMeta.NumberGroup__c.toUpperCase() + '_' + opsMeta.NumberLocation__c.toUpperCase());
+             if (String.isNotBlank(opsMeta.number_group__c) && String.isNotBlank(opsMeta.number_location__c)) {
+                openSeriesKeys.add(opsMeta.number_group__c.toUpperCase() + '_' + opsMeta.number_location__c.toUpperCase());
             }
         }
-        System.debug('Open Series Keys from CMD: ' + openSeriesKeys);
+        Logger.logInfo('Open Series Keys from CMD: ' + openSeriesKeys);
 
         List<String> defaultStatuses = new List<String>{'AA', 'AR', 'AI', 'AS'};
         List<String> openSeriesStatuses = new List<String>{'AR'};
@@ -113,7 +136,7 @@ public virtual class PhoneNumberSyncService { // Made class virtual for extensib
             boolean isSeriesOpen = openSeriesKeys.contains(currentSeriesKey);
             List<String> statusesToQuery = isSeriesOpen ? openSeriesStatuses : defaultStatuses;
 
-            System.debug('Processing Series: ' + seriesRecord.Name +
+            Logger.logInfo('Processing Series: ' + seriesRecord.Name +
                          ', Group: ' + seriesRecord.Number_Group__c +
                          ', Location: ' + seriesRecord.Number_Location__c +
                          ', IsOpen: ' + isSeriesOpen +
@@ -124,14 +147,16 @@ public virtual class PhoneNumberSyncService { // Made class virtual for extensib
                 params.withNumberGroup(seriesRecord.Number_Group__c);
                 params.withNumberLocation(seriesRecord.Number_Location__c);
                 params.withCvr(seriesRecord.CVR__c);
-                params.withNumberPattern(seriesRecord.Number_Pattern_c);
+                params.withNumberPattern(seriesRecord.Number_Pattern__c);
                 // Note: Product_type__c from seriesRecord.Product_type__c is not directly used by
                 // the current NumberService.GetNumbersParameterbuilder().build() which hardcodes GSM.
                 // This might be an area for future enhancement if the builder needs to be more dynamic.
                 params.withNumberStatus(status);
                 // params.withAmountOfNumbers(X); // Consider pagination
-
+                
+                Logger.logInfo('Calling getNumberDetails with ' +  params);
                 NumberResDAO.NumberDetails details = callGetNumberDetails(params);
+                Logger.logInfo('getNumberDetails returned ' + details);
 
                 if (details != null && details.data != null) {
                     for (NumberResDAO.NumberData numberData : details.data) {
@@ -144,7 +169,7 @@ public virtual class PhoneNumberSyncService { // Made class virtual for extensib
                         }
                     }
                 } else if (details != null && details.error != null) {
-                    System.debug('Error fetching remote numbers for Series Name ' + seriesRecord.Name +
+                    Logger.logInfo('Error fetching remote numbers for Series Name ' + seriesRecord.Name +
                                  ' (Group: ' + seriesRecord.Number_Group__c +
                                  ', Location: ' + seriesRecord.Number_Location__c +
                                  ') with status ' + status + ': ' + details.error.message);
@@ -154,6 +179,9 @@ public virtual class PhoneNumberSyncService { // Made class virtual for extensib
         return remoteAssignmentsMap;
     }
 
+    /**
+     * compareAndPrepareDML
+     */
     private void compareAndPrepareDML(
         Map<String, Account_Phone_Number_Assignment__c> localAssignments,
         Map<String, RemoteAssignmentWrapper> remoteAssignments
@@ -184,7 +212,7 @@ public virtual class PhoneNumberSyncService { // Made class virtual for extensib
                 // For now, only core fields are mapped.
 
                 toCreate.add(newAssignment);
-                System.debug('To Create: Phone=' + remoteData.phoneNumber + ', Status=' + remoteData.numberStatus + ', SeriesId=' + parentSeriesIdForRemote);
+                Logger.logInfo('To Create: Phone=' + remoteData.phoneNumber + ', Status=' + remoteData.numberStatus + ', SeriesId=' + parentSeriesIdForRemote);
 
             } else {
                 // Existing record: check for changes
@@ -211,7 +239,7 @@ public virtual class PhoneNumberSyncService { // Made class virtual for extensib
 
                 if (changed) {
                     toUpdate.add(localRecord);
-                    System.debug('To Update: Phone=' + localRecord.Phone_Number__c + ', NewStatus=' + localRecord.CTN_Number_Status__c);
+                    Logger.logInfo('To Update: Phone=' + localRecord.Phone_Number__c + ', NewStatus=' + localRecord.CTN_Number_Status__c);
                 }
             }
         }
@@ -221,13 +249,16 @@ public virtual class PhoneNumberSyncService { // Made class virtual for extensib
             if (!remoteAssignments.containsKey(localKey)) {
                 Account_Phone_Number_Assignment__c assignmentToDelete = localAssignments.get(localKey);
                 toDelete.add(assignmentToDelete);
-                System.debug('To Delete: Phone=' + assignmentToDelete.Phone_Number__c + ', Id=' + assignmentToDelete.Id);
+                Logger.logInfo('To Delete: Phone=' + assignmentToDelete.Phone_Number__c + ', Id=' + assignmentToDelete.Id);
             }
         }
 
         executeDMLOperations(toCreate, toUpdate, toDelete);
     }
 
+    /**
+     * executeDMLOperations
+     */
     private void executeDMLOperations(
         List<Account_Phone_Number_Assignment__c> toCreate,
         List<Account_Phone_Number_Assignment__c> toUpdate,
@@ -237,21 +268,31 @@ public virtual class PhoneNumberSyncService { // Made class virtual for extensib
         try {
             if (!toCreate.isEmpty()) {
                 // TODO: Before insert, ensure required fields are populated or handle defaults
-                insert toCreate;
-                System.debug('Created ' + toCreate.size() + ' new assignments.');
+                DatabaseService dbs = new DatabaseService();
+                dbs.insertRecords(toCreate);
+                Logger.logInfo('Created ' + toCreate.size() + ' new assignments.');
             }
             if (!toUpdate.isEmpty()) {
-                update toUpdate;
-                System.debug('Updated ' + toUpdate.size() + ' existing assignments.');
+                DatabaseService dbs = new DatabaseService();
+                dbs.updateRecords(toUpdate);
+                Logger.logInfo('Updated ' + toUpdate.size() + ' existing assignments.');
             }
             if (!toDelete.isEmpty()) {
-                delete toDelete;
-                System.debug('Deleted ' + toDelete.size() + ' assignments.');
+                DatabaseService dbs = new DatabaseService();
+                dbs.deleteRecords(toDelete);
+
+                Logger.logInfo('Deleted ' + toDelete.size() + ' assignments.');
             }
         } catch (DmlException e) {
             // TODO: Implement robust error handling for DML failures
-            System.debug('DML Error: ' + e.getMessage());
-            // Consider logging errors, sending notifications, or a retry mechanism for certain errors
+            system.debug('kk ' +  'DML Error: ' + e.getMessage());
+            Logger.logError('PhoneNumberSyncService', 'DML Error: ' + e.getMessage());
         }
     }
 }
+
+
+
+
+
+
